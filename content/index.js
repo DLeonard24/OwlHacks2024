@@ -53,31 +53,31 @@ var capture = (force) => {
   chrome.storage.sync.get((config) => {
     if (selection && (config.method === 'crop' || (config.method === 'wait' && force))) {
       jcrop.release();
-      setTimeout(() => {
+      setTimeout(async () => {  // Use async here
         var _selection = selection;
         chrome.runtime.sendMessage({
           message: 'capture', format: config.format, quality: config.quality
-        }, (res) => {
+        }, async (res) => {  // Await for response
           overlay(false);
-          crop(res.image, _selection, devicePixelRatio, config.scaling, config.format, (image) => {
-            displayImage(image);  // Changed from save() to displayImage()
-            selection = null;
+          const area = {}; // Define area based on your requirements
+          crop(res.image, area, devicePixelRatio, config.scaling, config.format, async (image) => {
+            const result = await query_gemini(image);  // Await query_gemini here
+            displayImage(image, result);               // Pass the result to displayImage
           });
         });
       }, 50);
-    }
-    else if (config.method === 'view') {
+    } else if (config.method === 'view') {
       chrome.runtime.sendMessage({
         message: 'capture', format: config.format, quality: config.quality
-      }, (res) => {
+      }, async (res) => {  // Await for response
         overlay(false);
         if (devicePixelRatio !== 1 && !config.scaling) {
           var area = {x: 0, y: 0, w: innerWidth, h: innerHeight};
-          crop(res.image, area, devicePixelRatio, config.scaling, config.format, (image) => {
-            displayImage(image);  // Changed from save() to displayImage()
+          crop(res.image, area, devicePixelRatio, config.scaling, config.format, async (image) => {
+            const result = await query_gemini(image);  // Await query_gemini here
+            displayImage(image, result);               // Pass the result to displayImage
           });
-        }
-        else {
+        } else {
           displayImage(res.image);  // Changed from save() to displayImage()
         }
       });
@@ -128,7 +128,8 @@ var save = (image, format, save, clipboard, dialog) => {
   }
 }
 
-var displayImage = (imageData) => {
+
+var displayImage = (imageData, res) => {
 
   var popup = document.createElement('div');
   popup.id = 'image-popup';
@@ -143,6 +144,7 @@ var displayImage = (imageData) => {
 
   popup.innerHTML = `
     <img src="${imageData}" alt="Captured Image" style="max-width:100%;"><br>
+    <span style="font-size: 20px;">${res ? res[0].text : 'No text found'}</span><br>
     <button id="close-popup" style="margin-top: 10px;">Close</button>
   `;
 
@@ -162,19 +164,23 @@ window.addEventListener('resize', ((timeout) => () => {
 })());
 
 chrome.runtime.onMessage.addListener((req, sender, res) => {
+  console.log("Received message:", req);
+
   if (req.message === 'init') {
-    res({}); // prevent re-injecting
+    res({}); // Send a response to prevent re-injecting
 
     if (!jcrop) {
-      image(() => init(() => {
-        overlay();
-        capture();
-      }));
-    }
-    else {
+      console.log("Initializing image...");
+      image(() => {
+        init(() => {
+          overlay();
+          capture();
+        });
+      });
+    } else {
       overlay();
       capture(true);
     }
   }
-  return true;
+  return true;  // Keep the message channel open for async response
 });
